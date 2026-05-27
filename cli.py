@@ -11523,6 +11523,14 @@ class HermesCLI:
         # leave it False, which is correct — those aren't user interrupts.
         self._last_turn_interrupted = False
 
+        # Cancel idle compression timer — user is actively interacting.
+        _timer = getattr(self.agent, '_idle_timer', None) if self.agent else None
+        if _timer is not None:
+            try:
+                _timer.cancel()
+            except Exception:
+                pass
+
         # Refresh provider credentials if needed (handles key rotation transparently)
         if not self._ensure_runtime_credentials():
             return None
@@ -11858,6 +11866,16 @@ class HermesCLI:
             if self._prompt_start_time is not None:
                 self._prompt_duration = max(0.0, time.time() - self._prompt_start_time)
                 self._prompt_start_time = None
+
+            # Start idle compression timer after normal completion (not interrupt).
+            # OpenClacky pattern: idle → background compact to reuse prompt cache.
+            if interrupt_msg is None:
+                _timer = getattr(self.agent, '_idle_timer', None) if self.agent else None
+                if _timer is not None:
+                    try:
+                        _timer.start()
+                    except Exception:
+                        pass
 
             # Proactively clean up async clients whose event loop is dead.
             # The agent thread may have created AsyncOpenAI clients bound

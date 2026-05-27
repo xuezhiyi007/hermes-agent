@@ -1244,6 +1244,13 @@ def init_agent(
     chunk_archiving_enabled = str(_chunk_cfg.get("enabled", True)).lower() in {"true", "1", "yes"}
     chunk_max_per_session = int(_chunk_cfg.get("max_chunks_per_session", 20))
 
+    # Idle auto-compression cfg (OpenClacky-style background compacting)
+    _idle_cfg = _compression_cfg.get("idle", {})
+    if not isinstance(_idle_cfg, dict):
+        _idle_cfg = {}
+    idle_compression_enabled = str(_idle_cfg.get("enabled", True)).lower() in {"true", "1", "yes"}
+    idle_delay_seconds = float(_idle_cfg.get("delay_seconds", 300))
+
     # Read optional explicit context_length override for the auxiliary
     # compression model. Custom endpoints often cannot report this via
     # /models, so the startup feasibility check needs the config hint.
@@ -1466,6 +1473,21 @@ def init_agent(
         enabled=chunk_archiving_enabled,
         max_chunks=chunk_max_per_session,
     )
+
+    # OpenClacky idle auto-compression timer — starts after each agent run,
+    # cancels on new user input. The compression call itself reuses the
+    # existing prompt cache (Insert-then-Compress pattern).
+    agent._idle_timer = None
+    if idle_compression_enabled:
+        try:
+            from agent.idle_compression import IdleCompressionTimer, DEFAULT_MIN_TOKENS
+            agent._idle_timer = IdleCompressionTimer(
+                agent,
+                delay_seconds=idle_delay_seconds,
+                min_tokens=DEFAULT_MIN_TOKENS,
+            )
+        except Exception:
+            agent._idle_timer = None
 
     # Reject models whose context window is below the minimum required
     # for reliable tool-calling workflows (64K tokens).
